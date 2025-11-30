@@ -114,13 +114,23 @@ func handleKeyMsg(m *Model, msg tea.KeyMsg) (*Model, tea.Cmd) {
 func handleDown(m *Model) (*Model, tea.Cmd) {
 	switch m.CurrentView {
 	case "feed":
-		if m.CurrentFeed < len(m.Feeds)-1 {
+		feedCount := len(m.Config.Feeds)
+		if m.Config == nil {
+			feedCount = 0
+		}
+		if m.CurrentFeed < feedCount-1 {
 			m.CurrentFeed++
 		}
 	case "articles":
-		if len(m.Feeds) > 0 && m.CurrentFeed < len(m.Feeds) {
-			if m.Cursor < len(m.Feeds[m.CurrentFeed].Item)-1 {
-				m.Cursor++
+		if m.Config != nil && m.CurrentFeed < len(m.Config.Feeds) {
+			// Find loaded feed
+			for i := range m.Feeds {
+				if m.Feeds[i].FeedURL == m.Config.Feeds[m.CurrentFeed].URL {
+					if m.Cursor < len(m.Feeds[i].Item)-1 {
+						m.Cursor++
+					}
+					break
+				}
 			}
 		}
 	}
@@ -144,21 +154,33 @@ func handleUp(m *Model) (*Model, tea.Cmd) {
 func handleEnter(m *Model) (*Model, tea.Cmd) {
 	switch m.CurrentView {
 	case "feed":
-		if len(m.Feeds) > 0 && m.CurrentFeed < len(m.Feeds) {
-			if len(m.Feeds[m.CurrentFeed].Item) > 0 {
-				m.CurrentView = "articles"
-				m.Cursor = 0
+		if m.Config != nil && m.CurrentFeed < len(m.Config.Feeds) {
+			// Check if feed is loaded and has articles
+			for i := range m.Feeds {
+				if m.Feeds[i].FeedURL == m.Config.Feeds[m.CurrentFeed].URL {
+					if len(m.Feeds[i].Item) > 0 {
+						m.CurrentView = "articles"
+						m.Cursor = 0
+					}
+					break
+				}
 			}
 		}
 		return m, nil
 
 	case "articles":
-		if len(m.Feeds) > 0 && m.CurrentFeed < len(m.Feeds) {
-			feed := m.Feeds[m.CurrentFeed]
-			if m.Cursor < len(feed.Item) {
-				item := feed.Item[m.Cursor]
-				m.Loading = true
-				return m, LoadArticle(m.Fetcher, item.Link)
+		if m.Config != nil && m.CurrentFeed < len(m.Config.Feeds) {
+			// Find loaded feed
+			for i := range m.Feeds {
+				if m.Feeds[i].FeedURL == m.Config.Feeds[m.CurrentFeed].URL {
+					feed := m.Feeds[i]
+					if m.Cursor < len(feed.Item) {
+						item := feed.Item[m.Cursor]
+						m.Loading = true
+						return m, LoadArticle(m.Fetcher, item.Link)
+					}
+					break
+				}
 			}
 		}
 		return m, nil
@@ -201,16 +223,25 @@ func toggleReadStatus(m *Model) (*Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if m.CurrentFeed >= len(m.Feeds) {
+	if m.Config == nil || m.CurrentFeed >= len(m.Config.Feeds) {
 		return m, nil
 	}
 
-	feed := &m.Feeds[m.CurrentFeed]
-	if m.Cursor >= len(feed.Item) {
+	// Find loaded feed by FeedURL
+	feedConfig := m.Config.Feeds[m.CurrentFeed]
+	var loadedFeed *feed.Channel
+	for i := range m.Feeds {
+		if m.Feeds[i].FeedURL == feedConfig.URL {
+			loadedFeed = &m.Feeds[i]
+			break
+		}
+	}
+
+	if loadedFeed == nil || m.Cursor >= len(loadedFeed.Item) {
 		return m, nil
 	}
 
-	item := &feed.Item[m.Cursor]
+	item := &loadedFeed.Item[m.Cursor]
 	item.Read = !item.Read
 
 	if item.Read {

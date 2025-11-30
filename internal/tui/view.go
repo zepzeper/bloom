@@ -1,11 +1,29 @@
 package tui
 
 import (
+	"bloom/internal/feed"
 	"bloom/internal/tui/components"
 	"bloom/internal/tui/styles"
 
 	"github.com/charmbracelet/lipgloss"
 )
+
+// getLoadedFeedForConfigIndex returns the loaded feed for the given config feed index,
+// or nil if the feed hasn't loaded yet or doesn't exist
+func (m Model) getLoadedFeedForConfigIndex(configIndex int) *feed.Channel {
+	if m.Config == nil || configIndex < 0 || configIndex >= len(m.Config.Feeds) {
+		return nil
+	}
+	
+	feedConfig := m.Config.Feeds[configIndex]
+	// Find matching loaded feed by FeedURL
+	for i := range m.Feeds {
+		if m.Feeds[i].FeedURL == feedConfig.URL {
+			return &m.Feeds[i]
+		}
+	}
+	return nil
+}
 
 // View is the main view dispatcher (bubbletea interface)
 func (m Model) View() string {
@@ -41,9 +59,15 @@ func (m Model) View() string {
 				}
 			}
 		}
-		
+
+		// Use Config.Feeds count to match what's displayed in the feed list
+		feedCount := len(m.Config.Feeds)
+		if m.Config == nil {
+			feedCount = 0
+		}
+
 		return components.RenderLanding(
-			len(m.Feeds),
+			feedCount,
 			totalArticles,
 			readCount,
 			m.Config,
@@ -51,15 +75,23 @@ func (m Model) View() string {
 			m.Height,
 		) + "\n" + components.RenderLandingStatusBar(width)
 	case "feed":
-		content = components.RenderFeedList(m.Feeds, m.CurrentFeed, width)
-		status = components.RenderFeedStatusBar(len(m.Feeds), width)
+		feedCount := len(m.Config.Feeds)
+		if m.Config == nil {
+			feedCount = 0
+		}
+		content = components.RenderFeedList(m.Config.Feeds, m.Feeds, m.CurrentFeed, width)
+		status = components.RenderFeedStatusBar(feedCount, width)
 		return lipgloss.JoinVertical(lipgloss.Left, content, status)
 	case "articles":
-		if m.CurrentFeed < len(m.Feeds) {
-			feed := m.Feeds[m.CurrentFeed]
-			content = components.RenderArticleList(feed, m.Cursor, width)
-			status = components.RenderArticleListStatusBar(feed.Title, m.Cursor, len(feed.Item), width)
+		loadedFeed := m.getLoadedFeedForConfigIndex(m.CurrentFeed)
+		if loadedFeed != nil {
+			content = components.RenderArticleList(*loadedFeed, m.Cursor, width)
+			status = components.RenderArticleListStatusBar(loadedFeed.Title, m.Cursor, len(loadedFeed.Item), width)
 			return lipgloss.JoinVertical(lipgloss.Left, content, status)
+		}
+		// Feed not loaded yet
+		if m.Config != nil && m.CurrentFeed < len(m.Config.Feeds) {
+			return styles.SubtleStyle().Render("Feed is loading...") + "\n" + styles.RenderStatusBar("Articles", "Loading...", "Esc: Back", width)
 		}
 		return "No feed selected"
 	case "content":

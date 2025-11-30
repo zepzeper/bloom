@@ -4,12 +4,35 @@ import (
 	"bloom/internal/feed"
 	"bloom/internal/storage"
 	"fmt"
+	"net/url"
 	"os/exec"
 	"runtime"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// normalizeFeedURL normalizes a feed URL by adding https:// if no protocol is present
+func normalizeFeedURL(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return rawURL
+	}
+	
+	// Check if URL already has a protocol
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		// If parsing fails, try adding https://
+		return "https://" + rawURL
+	}
+	
+	// If no scheme, add https://
+	if parsed.Scheme == "" {
+		return "https://" + rawURL
+	}
+	
+	return rawURL
+}
 
 func LoadState() tea.Cmd {
 	return func() tea.Msg {
@@ -50,10 +73,15 @@ func LoadFeedsFromConfig(config *storage.Config, reader *feed.Reader) tea.Cmd {
 }
 
 // LoadFeed loads an RSS feed from a URL
-func LoadFeed(url string) tea.Cmd {
+func LoadFeed(rawURL string) tea.Cmd {
 	return func() tea.Msg {
+		normalizedURL := normalizeFeedURL(rawURL)
 		reader := feed.NewReader()
-		channel, err := reader.Read(url)
+		channel, err := reader.Read(normalizedURL)
+		if channel != nil {
+			// Store the feed URL we used to fetch this channel
+			channel.FeedURL = normalizedURL
+		}
 		return FeedLoadMsg{Channel: channel, Err: err}
 	}
 }

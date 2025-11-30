@@ -3,9 +3,18 @@ package storage
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 )
+
+// FeedConfig represents a feed configuration
+type FeedConfig struct {
+	URL      string
+	Category string
+	Tags     []string
+}
 
 // Config represents the application configuration
 type Config struct {
@@ -55,7 +64,47 @@ func LoadConfig() (*Config, error) {
 		config.Feeds = []FeedConfig{}
 	}
 
+	// Normalize feed URLs (add https:// if missing)
+	needsSave := false
+	for i := range config.Feeds {
+		normalized := normalizeFeedURL(config.Feeds[i].URL)
+		if normalized != config.Feeds[i].URL {
+			config.Feeds[i].URL = normalized
+			needsSave = true
+		}
+	}
+	
+	// Save config with normalized URLs if any changed
+	if needsSave {
+		if err := SaveConfig(&config); err != nil {
+			// Log error but don't fail - config is still valid
+			fmt.Printf("Warning: failed to save normalized URLs: %v\n", err)
+		}
+	}
+
 	return &config, nil
+}
+
+// normalizeFeedURL normalizes a feed URL by adding https:// if no protocol is present
+func normalizeFeedURL(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return rawURL
+	}
+	
+	// Check if URL already has a protocol
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		// If parsing fails, try adding https://
+		return "https://" + rawURL
+	}
+	
+	// If no scheme, add https://
+	if parsed.Scheme == "" {
+		return "https://" + rawURL
+	}
+	
+	return rawURL
 }
 
 // SaveConfig saves the configuration to ~/.config/bloom/config.json

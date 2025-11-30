@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bloom/internal/feed"
 	"bloom/internal/storage"
 	"bloom/internal/tui/utils"
 	"strings"
@@ -41,10 +42,17 @@ func handleArticleLoad(m *Model, msg ArticleLoadMsg) (*Model, tea.Cmd) {
 	if m.State != nil {
 		m.State.MarkAsRead(msg.Article.URL)
 		// Update the read status in the feed list
-		if m.CurrentFeed < len(m.Feeds) {
-			for i := range m.Feeds[m.CurrentFeed].Item {
-				if m.Feeds[m.CurrentFeed].Item[i].Link == msg.Article.URL {
-					m.Feeds[m.CurrentFeed].Item[i].Read = true
+		if m.Config != nil && m.CurrentFeed < len(m.Config.Feeds) {
+			feedConfig := m.Config.Feeds[m.CurrentFeed]
+			// Find matching loaded feed by FeedURL
+			for i := range m.Feeds {
+				if m.Feeds[i].FeedURL == feedConfig.URL {
+					for j := range m.Feeds[i].Item {
+						if m.Feeds[i].Item[j].Link == msg.Article.URL {
+							m.Feeds[i].Item[j].Read = true
+							break
+						}
+					}
 					break
 				}
 			}
@@ -78,7 +86,6 @@ func handleStateLoad(m *Model, msg StateLoadMsg) (*Model, tea.Cmd) {
 		// If state loading fails, just use empty state
 		m.State = &storage.AppState{
 			ReadArticles: make(map[string]bool),
-			FeedURLs:     []storage.FeedConfig{},
 		}
 		return m, nil
 	}
@@ -110,7 +117,10 @@ func handleConfigLoad(m *Model, msg ConfigLoadMsg) (*Model, tea.Cmd) {
 
 	m.Config = msg.Config
 
-	// Load all feeds from config
+	// Clear existing feeds to prevent duplicates when reloading config
+	m.Feeds = []feed.Channel{}
+
+	// Load all feeds from config (URLs are already normalized by LoadConfig)
 	var cmds []tea.Cmd
 	for _, feedConfig := range msg.Config.Feeds {
 		cmds = append(cmds, LoadFeed(feedConfig.URL))

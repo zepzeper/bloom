@@ -10,14 +10,7 @@ import (
 
 type AppState struct {
 	ReadArticles map[string]bool
-	FeedURLs     []FeedConfig
 	LastSync     time.Time
-}
-
-type FeedConfig struct {
-	URL      string
-	Category string
-	Tags     []string
 }
 
 func (s *AppState) MarkAsRead(articleURL string) {
@@ -60,9 +53,6 @@ func LoadState() (*AppState, error) {
 	if state.ReadArticles == nil {
 		state.ReadArticles = make(map[string]bool)
 	}
-	if state.FeedURLs == nil {
-		state.FeedURLs = []FeedConfig{}
-	}
 
 	return &state, nil
 }
@@ -102,7 +92,7 @@ func SaveState(state *AppState) error {
 func NewAppState() *AppState {
 	return &AppState{
 		ReadArticles: make(map[string]bool),
-		FeedURLs:     []FeedConfig{},
 		LastSync:     time.Now(),
 	}
 }
+

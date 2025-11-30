@@ -76,13 +76,23 @@ func HandleKeyMsg(m *tui.Model, msg tea.KeyMsg) (*tui.Model, tea.Cmd) {
 func HandleDown(m *tui.Model) (*tui.Model, tea.Cmd) {
 	switch m.CurrentView {
 	case "feed":
-		if m.CurrentFeed < len(m.Feeds)-1 {
+		feedCount := len(m.Config.Feeds)
+		if m.Config == nil {
+			feedCount = 0
+		}
+		if m.CurrentFeed < feedCount-1 {
 			m.CurrentFeed++
 		}
 	case "articles":
-		if len(m.Feeds) > 0 && m.CurrentFeed < len(m.Feeds) {
-			if m.Cursor < len(m.Feeds[m.CurrentFeed].Item)-1 {
-				m.Cursor++
+		if m.Config != nil && m.CurrentFeed < len(m.Config.Feeds) {
+			// Find loaded feed
+			for i := range m.Feeds {
+				if m.Feeds[i].FeedURL == m.Config.Feeds[m.CurrentFeed].URL {
+					if m.Cursor < len(m.Feeds[i].Item)-1 {
+						m.Cursor++
+					}
+					break
+				}
 			}
 		}
 	}
@@ -106,21 +116,33 @@ func HandleUp(m *tui.Model) (*tui.Model, tea.Cmd) {
 func HandleEnter(m *tui.Model) (*tui.Model, tea.Cmd) {
 	switch m.CurrentView {
 	case "feed":
-		if len(m.Feeds) > 0 && m.CurrentFeed < len(m.Feeds) {
-			if len(m.Feeds[m.CurrentFeed].Item) > 0 {
-				m.CurrentView = "articles"
-				m.Cursor = 0
+		if m.Config != nil && m.CurrentFeed < len(m.Config.Feeds) {
+			// Check if feed is loaded and has articles
+			for i := range m.Feeds {
+				if m.Feeds[i].FeedURL == m.Config.Feeds[m.CurrentFeed].URL {
+					if len(m.Feeds[i].Item) > 0 {
+						m.CurrentView = "articles"
+						m.Cursor = 0
+					}
+					break
+				}
 			}
 		}
 		return m, nil
 
 	case "articles":
-		if len(m.Feeds) > 0 && m.CurrentFeed < len(m.Feeds) {
-			feed := m.Feeds[m.CurrentFeed]
-			if m.Cursor < len(feed.Item) {
-				item := feed.Item[m.Cursor]
-				m.Loading = true
-				return m, tui.LoadArticle(m.Fetcher, item.Link)
+		if m.Config != nil && m.CurrentFeed < len(m.Config.Feeds) {
+			// Find loaded feed
+			for i := range m.Feeds {
+				if m.Feeds[i].FeedURL == m.Config.Feeds[m.CurrentFeed].URL {
+					feed := m.Feeds[i]
+					if m.Cursor < len(feed.Item) {
+						item := feed.Item[m.Cursor]
+						m.Loading = true
+						return m, tui.LoadArticle(m.Fetcher, item.Link)
+					}
+					break
+				}
 			}
 		}
 		return m, nil

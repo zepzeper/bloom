@@ -3,11 +3,12 @@ package feed
 type Channel struct {
 	Title       string   `xml:"title"`
 	Description string   `xml:"description"`
-	Link        string   `xml:"link"`
+	Link        string   `xml:"link"`        // Website URL from RSS feed
 	Language    string   `xml:"language"`
 	Item        []Item   `xml:"item"`
 	Category    string   `xml:"category"`
 	Tags        []string `xml:"tags"`
+	FeedURL     string   `xml:"-"`            // The feed URL used to fetch this channel (not in XML)
 }
 
 type Item struct {
