@@ -24,7 +24,14 @@ func handleKeyMsg(m *Model, msg tea.KeyMsg) (*Model, tea.Cmd) {
 
 	// Handle scrolling and cursor movement in content view first
 	if m.CurrentView == "content" {
-		switch msg.String() {
+		keyStr := msg.String()
+		
+		// Check for uppercase O via Runes for more reliable detection
+		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == 'O' {
+			return openLinkUnderCursor(m)
+		}
+		
+		switch keyStr {
 		case "j", "down":
 			// Move cursor down or scroll
 			return handleContentDown(m)
@@ -55,8 +62,38 @@ func handleKeyMsg(m *Model, msg tea.KeyMsg) (*Model, tea.Cmd) {
 				m.CursorX = 0
 			}
 			return m, nil
+		case "w":
+			// Move forward to start of next word
+			return handleWordForward(m, false)
+		case "W":
+			// Move forward to start of next WORD (space-separated)
+			return handleWordForward(m, true)
+		case "b":
+			// Move backward to start of current/previous word
+			return handleWordBackward(m, false)
+		case "B":
+			// Move backward to start of current/previous WORD
+			return handleWordBackward(m, true)
+		case "e":
+			// Move forward to end of current/next word
+			return handleWordEndForward(m, false)
+		case "E":
+			// Move forward to end of current/next WORD
+			return handleWordEndForward(m, true)
+		case "0":
+			// Move to start of line
+			return handleLineStart(m)
+		case "$":
+			// Move to end of line
+			return handleLineEnd(m)
+		case "^":
+			// Move to first non-whitespace character
+			return handleLineFirstNonWhitespace(m)
 		case "o":
 			// Open link under cursor
+			return openLinkUnderCursor(m)
+		case "O":
+			// Open link under cursor (Shift+O)
 			return openLinkUnderCursor(m)
 		case "c":
 			// Copy link under cursor
@@ -582,4 +619,236 @@ func copyLinkUnderCursor(m *Model) (*Model, tea.Cmd) {
 
 	// Return a command to copy the link
 	return m, CopyLink(link.URL)
+}
+
+// Vim word navigation functions
+
+// isWordChar returns true if the rune is a word character (alphanumeric or underscore)
+func isWordChar(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_'
+}
+
+// isWhitespace returns true if the rune is whitespace
+func isWhitespace(r rune) bool {
+	return r == ' ' || r == '\t' || r == '\n' || r == '\r'
+}
+
+// getCurrentLine returns the current line content (without ANSI codes for navigation)
+func getCurrentLine(m *Model) string {
+	actualLine := m.ScrollOffset + m.CursorY
+	if actualLine < 0 || actualLine >= len(m.ArticleLines) {
+		return ""
+	}
+	return utils.StripANSI(m.ArticleLines[actualLine])
+}
+
+// handleWordForward moves cursor forward to start of next word
+func handleWordForward(m *Model, bigWord bool) (*Model, tea.Cmd) {
+	if m.CurrentView != "content" {
+		return m, nil
+	}
+
+	line := getCurrentLine(m)
+	if line == "" {
+		return m, nil
+	}
+
+	lineLen := len([]rune(line))
+	pos := m.CursorX
+
+	// If at end of line, try to move to next line
+	if pos >= lineLen {
+		return handleContentDown(m)
+	}
+
+	runes := []rune(line)
+
+	// Skip current word if we're in the middle of one
+	if pos < lineLen {
+		if bigWord {
+			// For WORD, skip non-whitespace
+			for pos < lineLen && !isWhitespace(runes[pos]) {
+				pos++
+			}
+		} else {
+			// For word, skip word characters
+			for pos < lineLen && isWordChar(runes[pos]) {
+				pos++
+			}
+			// Skip punctuation and other non-word, non-whitespace characters
+			for pos < lineLen && !isWordChar(runes[pos]) && !isWhitespace(runes[pos]) {
+				pos++
+			}
+		}
+	}
+
+	// Skip whitespace
+	for pos < lineLen && isWhitespace(runes[pos]) {
+		pos++
+	}
+
+	// If we've reached end of line, move to next line
+	if pos >= lineLen {
+		return handleContentDown(m)
+	}
+
+	m.CursorX = pos
+	return m, nil
+}
+
+// handleWordBackward moves cursor backward to start of current/previous word
+func handleWordBackward(m *Model, bigWord bool) (*Model, tea.Cmd) {
+	if m.CurrentView != "content" {
+		return m, nil
+	}
+
+	line := getCurrentLine(m)
+	if line == "" {
+		return m, nil
+	}
+
+	pos := m.CursorX
+	runes := []rune(line)
+
+	// If at start of line, try to move to previous line
+	if pos <= 0 {
+		return handleContentUp(m)
+	}
+
+	// Move back one position first
+	pos--
+
+	// Skip whitespace
+	for pos > 0 && isWhitespace(runes[pos]) {
+		pos--
+	}
+
+	// Skip to start of word
+	if bigWord {
+		// For WORD, skip non-whitespace
+		for pos > 0 && !isWhitespace(runes[pos-1]) {
+			pos--
+		}
+	} else {
+		// Skip punctuation and other non-word, non-whitespace characters first
+		for pos > 0 && !isWordChar(runes[pos]) && !isWhitespace(runes[pos]) {
+			pos--
+		}
+		// For word, skip word characters
+		for pos > 0 && isWordChar(runes[pos-1]) {
+			pos--
+		}
+	}
+
+	m.CursorX = pos
+	return m, nil
+}
+
+// handleWordEndForward moves cursor forward to end of current/next word
+func handleWordEndForward(m *Model, bigWord bool) (*Model, tea.Cmd) {
+	if m.CurrentView != "content" {
+		return m, nil
+	}
+
+	line := getCurrentLine(m)
+	if line == "" {
+		return m, nil
+	}
+
+	lineLen := len([]rune(line))
+	pos := m.CursorX
+
+	// If at end of line, try to move to next line
+	if pos >= lineLen {
+		return handleContentDown(m)
+	}
+
+	runes := []rune(line)
+
+	// Skip whitespace
+	for pos < lineLen && isWhitespace(runes[pos]) {
+		pos++
+	}
+
+	// Move to end of word
+	if bigWord {
+		// For WORD, skip non-whitespace
+		for pos < lineLen && !isWhitespace(runes[pos]) {
+			pos++
+		}
+		// Move back one to be at end of WORD
+		if pos > 0 {
+			pos--
+		}
+	} else {
+		// Skip punctuation first if we're on it
+		for pos < lineLen && !isWordChar(runes[pos]) && !isWhitespace(runes[pos]) {
+			pos++
+		}
+		// For word, skip word characters
+		for pos < lineLen && isWordChar(runes[pos]) {
+			pos++
+		}
+		// Move back one to be at end of word
+		if pos > 0 {
+			pos--
+		}
+	}
+
+	// If we've reached end of line, move to next line
+	if pos >= lineLen {
+		return handleContentDown(m)
+	}
+
+	m.CursorX = pos
+	return m, nil
+}
+
+// handleLineStart moves cursor to start of line
+func handleLineStart(m *Model) (*Model, tea.Cmd) {
+	if m.CurrentView != "content" {
+		return m, nil
+	}
+
+	m.CursorX = 0
+	return m, nil
+}
+
+// handleLineEnd moves cursor to end of line
+func handleLineEnd(m *Model) (*Model, tea.Cmd) {
+	if m.CurrentView != "content" {
+		return m, nil
+	}
+
+	line := getCurrentLine(m)
+	if line == "" {
+		return m, nil
+	}
+
+	lineLen := len([]rune(line))
+	m.CursorX = lineLen
+	return m, nil
+}
+
+// handleLineFirstNonWhitespace moves cursor to first non-whitespace character
+func handleLineFirstNonWhitespace(m *Model) (*Model, tea.Cmd) {
+	if m.CurrentView != "content" {
+		return m, nil
+	}
+
+	line := getCurrentLine(m)
+	if line == "" {
+		return m, nil
+	}
+
+	runes := []rune(line)
+	pos := 0
+
+	// Skip whitespace
+	for pos < len(runes) && isWhitespace(runes[pos]) {
+		pos++
+	}
+
+	m.CursorX = pos
+	return m, nil
 }

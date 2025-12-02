@@ -218,15 +218,37 @@ func handleClipboardPaste(m *Model, msg ClipboardPasteMsg) (*Model, tea.Cmd) {
 }
 
 // renderMarkdownForScrolling renders markdown with glamour for line counting
+// Uses TermRenderer with word wrap to preserve colors and ensure proper rendering
 func renderMarkdownForScrolling(markdownContent string, width int) (string, error) {
 	if markdownContent == "" {
 		return "", nil
 	}
 
-	// Render with glamour
-	rendered, err := glamour.RenderWithEnvironmentConfig(markdownContent)
+	// Create a TermRenderer with word wrap and environment config
+	// This preserves ANSI colors and works well in terminals
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithEnvironmentConfig(),
+		glamour.WithWordWrap(width),
+		glamour.WithPreservedNewLines(),
+	)
 	if err != nil {
-		return markdownContent, err
+		// Fallback to simple render if TermRenderer creation fails
+		rendered, err := glamour.RenderWithEnvironmentConfig(markdownContent)
+		if err != nil {
+			return markdownContent, err
+		}
+		return rendered, nil
+	}
+
+	// Render the markdown
+	rendered, err := renderer.Render(markdownContent)
+	if err != nil {
+		// Fallback to simple render if rendering fails
+		rendered, err := glamour.RenderWithEnvironmentConfig(markdownContent)
+		if err != nil {
+			return markdownContent, err
+		}
+		return rendered, nil
 	}
 
 	return rendered, nil

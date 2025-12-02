@@ -109,8 +109,18 @@ func OpenLink(url string) tea.Cmd {
 			return LinkOpenedMsg{URL: url, Err: exec.ErrNotFound}
 		}
 
-		err := cmd.Run()
-		return LinkOpenedMsg{URL: url, Err: err}
+		// Use Start() instead of Run() to make it non-blocking
+		// This prevents the TUI from freezing if the browser takes time to open
+		err := cmd.Start()
+		if err != nil {
+			return LinkOpenedMsg{URL: url, Err: err}
+		}
+		
+		// Don't wait for the command to finish - let it run in background
+		// This allows the browser to open without blocking the TUI
+		go cmd.Wait()
+		
+		return LinkOpenedMsg{URL: url, Err: nil}
 	}
 }
 

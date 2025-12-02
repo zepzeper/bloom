@@ -69,8 +69,8 @@ func ParseLinksFromRenderedContent(rendered string) []Link {
 	var links []Link
 	lines := strings.Split(rendered, "\n")
 
-	// Pattern for URLs (http/https)
-	urlPattern := regexp.MustCompile(`https?://[^\s\x1b]+`)
+	// Pattern for URLs (http/https) - more permissive to catch URLs with various characters
+	urlPattern := regexp.MustCompile(`https?://[^\s\x1b\[\]()]+`)
 
 	for lineNum, line := range lines {
 		// Find all URL matches
@@ -80,9 +80,16 @@ func ParseLinksFromRenderedContent(rendered string) []Link {
 			urlWithCodes := line[match[0]:match[1]]
 			// Strip ANSI codes to get clean URL
 			url := StripANSI(urlWithCodes)
+			
+			// Skip if URL is empty after stripping
+			if url == "" {
+				continue
+			}
 
 			// Calculate display position (accounting for ANSI codes)
-			displayStart := runewidth.StringWidth(line[:match[0]])
+			// We need to calculate the display width of everything before the match
+			beforeMatch := line[:match[0]]
+			displayStart := runewidth.StringWidth(StripANSI(beforeMatch))
 			displayEnd := displayStart + runewidth.StringWidth(url)
 
 			links = append(links, Link{
@@ -90,7 +97,7 @@ func ParseLinksFromRenderedContent(rendered string) []Link {
 				URL:   url,
 				Line:  lineNum,
 				Start: displayStart,
-				End:   displayEnd,
+				End:   displayEnd - 1, // Make End inclusive (cursor can be at End position)
 			})
 		}
 	}

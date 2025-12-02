@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 )
 
 func RenderArticleFullScreen(title string, articleLines []string, articleLinks []utils.Link, scrollOffset, cursorX, cursorY, width, height int) string {
@@ -58,30 +59,17 @@ func RenderArticleFullScreen(title string, articleLines []string, articleLinks [
 			}
 		}
 
-		// Add cursor indicator to the current line
+		// Add cursor indicator to the current line (preserving ANSI codes)
 		if cursorY >= 0 && cursorY < len(visibleLines) {
 			line := visibleLines[cursorY]
-			// Strip ANSI codes to get actual display width
-			cleanLine := utils.StripANSI(line)
-			displayWidth := len([]rune(cleanLine))
-			
-			// Add cursor at position (or at end if position is beyond line)
+			// Get display width to validate cursor position
+			displayWidth := runewidth.StringWidth(utils.StripANSI(line))
 			cursorPos := cursorX
 			if cursorPos > displayWidth {
 				cursorPos = displayWidth
 			}
-			
-			// Insert cursor marker (inverse video space)
-			if cursorPos < displayWidth {
-				runes := []rune(cleanLine)
-				before := string(runes[:cursorPos])
-				after := string(runes[cursorPos:])
-				cursorChar := lipgloss.NewStyle().Reverse(true).Render(string(runes[cursorPos]))
-				visibleLines[cursorY] = before + cursorChar + after[1:]
-			} else if cursorPos == displayWidth {
-				// Cursor at end of line
-				visibleLines[cursorY] = cleanLine + lipgloss.NewStyle().Reverse(true).Render(" ")
-			}
+			// Insert cursor while preserving ANSI color codes
+			visibleLines[cursorY] = utils.InsertCursorAtPosition(line, cursorPos)
 		}
 
 		// Pad to fill screen
@@ -118,16 +106,29 @@ func RenderManPageStatusBar(title string, scrollOffset, totalLines int, currentL
 	}
 
 	// Right: Link info or help
+	helpText := "o/O:Open c:Copy"
 	if currentLink != nil {
 		// Show link URL if over a link
 		url := currentLink.URL
-		if len(url) > 25 {
-			url = url[:22] + "..."
+		// Calculate available space for right side
+		// Reserve space for help text: "[url] o/O:Open c:Copy"
+		leftWidth := len(left)
+		centerWidth := len(center)
+		helpTextLen := len(helpText) + 3 // "[url] " prefix
+		availableForURL := width - leftWidth - centerWidth - helpTextLen - 6 // 6 for spacing
+		
+		if availableForURL < 5 {
+			// Very narrow terminal, just show help
+			right = helpText
+		} else {
+			if len(url) > availableForURL {
+				url = url[:availableForURL-3] + "..."
+			}
+			right = fmt.Sprintf("[%s] %s", url, helpText)
 		}
-		right = fmt.Sprintf("[%s] o:Open c:Copy", url)
 	} else {
-		// Show minimal help
-		right = "j/k:Scroll Esc:Back q:Quit"
+		// Show vim navigation help
+		right = "j/k:Scroll w/b:Word 0/$:Line Esc:Back q:Quit"
 	}
 
 	// Format like man page with proper spacing
@@ -150,7 +151,21 @@ func RenderManPageStatusBar(title string, scrollOffset, totalLines int, currentL
 		}
 		return styles.StatusStyle().Width(width).Render(statusLine)
 	} else {
-		// Not enough space, just concatenate
+		// Not enough space, prioritize showing help text
+		// Truncate URL if needed, but keep help text visible
+		if currentLink != nil && len(right) > width-leftWidth-centerWidth-2 {
+			// Recalculate right side with better truncation
+			maxURLLen := width - leftWidth - centerWidth - len(helpText) - 8
+			if maxURLLen < 3 {
+				right = helpText // Just show help if too narrow
+			} else {
+				url := currentLink.URL
+				if len(url) > maxURLLen {
+					url = url[:maxURLLen-3] + "..."
+				}
+				right = fmt.Sprintf("[%s] %s", url, helpText)
+			}
+		}
 		statusLine := left + " " + center + " " + right
 		if len(statusLine) > width {
 			statusLine = statusLine[:width]
